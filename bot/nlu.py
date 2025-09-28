@@ -76,18 +76,33 @@ class NLU:
         - "customer_name": tên khách hàng
         - "phone": số điện thoại
         - "address": địa chỉ
+        - Nếu có NHIỀU sách: "books" là array
+        - Nếu chỉ có 1 sách: "book_title" và "quantity" riêng biệt
 
         Trả về JSON duy nhất theo format:
+        Format cho nhiều sách:
         {{
         "entities": {{
-            "book_title": "...",
-            "quantity": 2,
-            "customer_name": "...",
-            "phone": "...",
-            "address": "..."
+            "books": [
+                {{"title": "sách 1", "quantity": 2}},
+                {{"title": "sách 2", "quantity": 3}}
+            ],
+            "customer_name": null,
+            "phone": null,
+            "address": null
         }}
         }}
 
+        Format cho 1 sách:
+        {{
+        "entities": {{
+            "book_title": "tên sách",
+            "quantity": "...",
+            "customer_name": null,
+            "phone": null,
+            "address": null
+        }}
+        }}
         Câu cần phân tích: "{user_input}"
         """
 

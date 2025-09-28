@@ -28,7 +28,7 @@ class ResponseGenerator:
         state = self.dialog_manager.get_state(session_id)
         context = self.dialog_manager.get_context(session_id) or {}
 
-        # print(f"Intent: {intent} (conf={intent_conf}), Entities: {entities}, State: {state}")
+        print(f"Intent: {intent} , Entities: {entities}, State: {state}")
 
         # Nếu đang trong order flow, ưu tiên xử lý luồng đặt hàng
         if state and state.startswith('order_'):
@@ -134,6 +134,40 @@ class ResponseGenerator:
         return response
 
     # ---------------- Khởi tạo order ----------------
+    def _proceed_to_next_step(self, session_id: str, context: dict) -> str:
+        """Kiểm tra thông tin còn thiếu và chuyển đến bước tiếp theo hoặc xác nhận đơn hàng"""
+        required_fields = ['quantity', 'customer_name', 'phone', 'address']
+        missing = [f for f in required_fields if not context.get(f)]
+        
+        print(f"DEBUG - Missing fields: {missing}")
+        print(f"DEBUG - Context: {context}")
+        
+        if missing:
+            # Chuyển đến field thiếu đầu tiên
+            next_field = missing[0]
+            next_state = f'order_ask_{next_field}'
+            self.dialog_manager.update_session(session_id, state=next_state, context=context)
+            
+            questions = {
+                'quantity': f"Bạn muốn mua mấy cuốn ạ? (Còn lại: {context['book_stock']} cuốn)",
+                'customer_name': "Mình có thể biết tên của bạn không?",
+                'phone': "Bạn cho mình xin số điện thoại để liên hệ nhé?",
+                'address': "Bạn vui lòng cung cấp địa chỉ giao hàng?"
+            }
+            return questions[next_field]
+        else:
+            # Tất cả thông tin đã đủ, chuyển đến xác nhận
+            total = context['book_price'] * context['quantity']
+            self.dialog_manager.update_session(session_id, state='order_confirm', context=context)
+            return (f"📋 **XÁC NHẬN ĐƠN HÀNG:**\n\n"
+                    f"📚 Sách: {context['book_title']}\n"
+                    f"🔢 Số lượng: {context['quantity']} cuốn\n"
+                    f"💰 Tổng tiền: {total:,.0f}đ\n"
+                    f"👤 Người nhận: {context['customer_name']}\n"
+                    f"📞 SĐT: {context['phone']}\n"
+                    f"📍 Địa chỉ: {context['address']}\n\n"
+                    f"Gõ 'xác nhận' để hoàn tất đặt hàng, 'sửa <trường>' để chỉnh, hoặc 'hủy' để hủy bỏ.")
+
     def _handle_start_order(self, session_id: str, user_message: str, entities: Dict) -> str:
         book_title = entities.get('book_title') or ''
         keyword = str(book_title).strip() if book_title else ''
@@ -141,7 +175,6 @@ class ResponseGenerator:
             return "Bạn muốn mua sách gì ạ? Vui lòng cho biết tên sách."
 
         books = self.db.search_books(keyword)
-        print("📚 Kết quả tìm sách:", books)
 
         if not books:
             return f"Xin lỗi, tôi không tìm thấy sách '{keyword}'. Vui lòng kiểm tra lại tên sách."
@@ -172,34 +205,8 @@ class ResponseGenerator:
             'address': address
         }
 
-        missing = [f for f, v in [('quantity', quantity), ('customer_name', customer_name), ('phone', phone), ('address', address)] if not v]
-
-        print(f"DEBUG - Missing fields: {missing}")
-        print(f"DEBUG - Context: {context}")
-
-        if not missing:
-            total = context['book_price'] * context['quantity']
-            self.dialog_manager.update_session(session_id, state='order_confirm', context=context)
-            return (f"📋 **XÁC NHẬN ĐƠN HÀNG:**\n\n"
-                    f"📚 Sách: {context['book_title']}\n"
-                    f"🔢 Số lượng: {context['quantity']} cuốn\n"
-                    f"💰 Tổng tiền: {total:,.0f}đ\n"
-                    f"👤 Người nhận: {context['customer_name']}\n"
-                    f"📞 SĐT: {context['phone']}\n"
-                    f"📍 Địa chỉ: {context['address']}\n\n"
-                    f"Gõ 'xác nhận' để hoàn tất đặt hàng, 'sửa <trường>' để chỉnh, hoặc 'hủy' để hủy bỏ.")
-        else:
-            # Hỏi thông tin thiếu đầu tiên
-            next_field = missing[0]
-            next_state = f'order_ask_{next_field}'
-            self.dialog_manager.update_session(session_id, state=next_state, context=context)
-            questions = {
-                'quantity': f"Bạn muốn mua mấy cuốn ạ? (Còn lại: {book['stock']} cuốn)",
-                'customer_name': "Mình có thể biết tên của bạn không?",
-                'phone': "Bạn cho mình xin số điện thoại để liên hệ nhé?",
-                'address': "Bạn vui lòng cung cấp địa chỉ giao hàng?"
-            }
-            return questions[next_field]
+        # Sử dụng helper function thay vì logic trùng lặp
+        return self._proceed_to_next_step(session_id, context)
 
     # ---------------- Luồng đặt hàng chi tiết ----------------
     def _handle_order_flow(self, session_id: str, message: str, state: str, context: Dict, entities: Dict = None) -> str:
@@ -233,7 +240,6 @@ class ResponseGenerator:
                     if not book:
                         return "Không tìm thấy sách đã chọn, vui lòng thử lại."
                     # Tiếp tục quy trình với sách được chọn
-                    # Cập nhật context giống như _handle_start_order
                     new_context = {
                         'book_id': book['book_id'],
                         'book_title': book['title'],
@@ -244,13 +250,11 @@ class ResponseGenerator:
                         'phone': None,
                         'address': None
                     }
-                    self.dialog_manager.update_session(session_id, state='order_ask_quantity', context=new_context)
-                    return f"Bạn đã chọn **{book['title']}**. Bạn muốn mua mấy cuốn? (Còn lại: {book['stock']})"
+                    return self._proceed_to_next_step(session_id, new_context)
                 else:
                     return "Số bạn chọn không có trong danh sách, vui lòng chọn lại."
             else:
                 # Thử match theo tên ngắn
-                # So sánh đơn giản: tìm sách có tên chứa message
                 preview = context.get('candidate_list_preview', [])
                 for b in preview:
                     if message.strip().lower() in b['title'].lower():
@@ -264,23 +268,23 @@ class ResponseGenerator:
                             'phone': None,
                             'address': None
                         }
-                        self.dialog_manager.update_session(session_id, state='order_ask_quantity', context=new_context)
-                        return f"Bạn đã chọn **{b['title']}**. Bạn muốn mua mấy cuốn? (Còn lại: {b['stock']})"
+                        return self._proceed_to_next_step(session_id, new_context)
                 return "Mình không hiểu lựa chọn của bạn — vui lòng chọn theo số (ví dụ: 1) hoặc viết rõ tên sách."
 
         # Các bước hỏi thông tin
         new_context = dict(context)
 
         if state == 'order_ask_quantity':
-            qty = self._normalize_and_validate_quantity(entities.get('quantity') or None, context['book_stock'])
-            if not qty:
-                qty = self._extract_quantity_from_message(message, context['book_stock'])
-                if not qty:
-                    return f"Bạn muốn mua bao nhiêu cuốn? (Còn lại: {context['book_stock']} cuốn)"
+            qty_raw = entities.get('quantity') or self._extract_quantity_from_message(message, context['book_stock'])
+            if qty_raw is None:
+                return f"Bạn muốn mua bao nhiêu cuốn? (Còn lại: {context['book_stock']} cuốn)"
+
+            qty = self._normalize_and_validate_quantity(qty_raw, context['book_stock'])
+            if qty is None:
+                return f"Số lượng bạn nhập ({qty_raw}) vượt quá tồn kho ({context['book_stock']} cuốn). Vui lòng chọn lại."
 
             new_context['quantity'] = qty
-            self.dialog_manager.update_session(session_id, state='order_ask_customer_name', context=new_context)
-            return "Mình có thể biết tên của bạn không?"
+            return self._proceed_to_next_step(session_id, new_context)
 
         elif state == 'order_ask_customer_name':
             name = self._validate_name(entities.get('customer_name') or message.strip())
@@ -288,8 +292,7 @@ class ResponseGenerator:
                 return "Tên quá ngắn, bạn nhập lại giúp mình nhé!"
 
             new_context['customer_name'] = name
-            self.dialog_manager.update_session(session_id, state='order_ask_phone', context=new_context)
-            return "Bạn cho mình xin số điện thoại để liên hệ nhé?"
+            return self._proceed_to_next_step(session_id, new_context)
 
         elif state == 'order_ask_phone':
             phone = self._validate_phone(entities.get('phone') or self._extract_phone_from_message(message))
@@ -297,8 +300,7 @@ class ResponseGenerator:
                 return "Số điện thoại không hợp lệ, vui lòng nhập lại (10-11 số)."
 
             new_context['phone'] = phone
-            self.dialog_manager.update_session(session_id, state='order_ask_address', context=new_context)
-            return "Bạn vui lòng cung cấp địa chỉ giao hàng?"
+            return self._proceed_to_next_step(session_id, new_context)
 
         elif state == 'order_ask_address':
             address = self._validate_address(entities.get('address') or message.strip())
@@ -306,16 +308,7 @@ class ResponseGenerator:
                 return "Địa chỉ hơi ngắn, bạn nhập chi tiết hơn nhé!"
 
             new_context['address'] = address
-            total = new_context['book_price'] * new_context['quantity']
-            self.dialog_manager.update_session(session_id, state='order_confirm', context=new_context)
-            return (f"📋 **XÁC NHẬN ĐƠN HÀNG:**\n\n"
-                    f"📚 Sách: {new_context['book_title']}\n"
-                    f"🔢 Số lượng: {new_context['quantity']} cuốn\n"
-                    f"💰 Tổng tiền: {total:,.0f}đ\n"
-                    f"👤 Người nhận: {new_context['customer_name']}\n"
-                    f"📞 SĐT: {new_context['phone']}\n"
-                    f"📍 Địa chỉ: {new_context['address']}\n\n"
-                    f"Gõ 'xác nhận' để hoàn tất đặt hàng, 'sửa <trường>' để sửa (ví dụ 'sửa số lượng 2'), hoặc 'hủy' để hủy đơn.")
+            return self._proceed_to_next_step(session_id, new_context)
 
         elif state == 'order_confirm':
             # Nếu user muốn sửa 1 trường: hỗ trợ 'sửa số lượng 3', 'sửa địa chỉ ...', 'sửa sđt 012...'
@@ -355,8 +348,7 @@ class ResponseGenerator:
 
             # Xác nhận đơn
             if intent == "confirm_order" or any(word in msg_lower for word in ["xác nhận", "xac nhan", "ok", "đồng ý", "dong y"]):
-    # tạo order
-
+                # tạo order
                 order_data = {
                     'customer_name': context['customer_name'],
                     'phone': context['phone'],

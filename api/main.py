@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional, List
+from typing import Optional
+from pydantic import BaseModel
+import uuid
 
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # add ./bot
@@ -40,7 +43,7 @@ db = Database()
 # =====================================================
 
 class ChatRequest(BaseModel):
-    session_id: Optional[str] = "default"
+    session_id: Optional[str] = None
     message: str
 
 class ChatResponse(BaseModel):
@@ -74,18 +77,21 @@ async def root():
     """Root endpoint"""
     return {"message": "📚 BookStore Chatbot API đang chạy", "version": "1.0.0"}
 
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """Chat API"""
     if not request.message:
         raise HTTPException(status_code=400, detail="message is required")
+
+    # Nếu client không gửi session_id -> sinh random UUID
+    session_id = request.session_id or str(uuid.uuid4())
+
     try:
-        response = response_generator.generate_response(
-            request.session_id, request.message
-        )
-        return ChatResponse(success=True, response=response, session_id=request.session_id)
+        response = response_generator.generate_response(session_id, request.message)
+        return ChatResponse(success=True, response=response, session_id=session_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/books", response_model=BookListResponse)
 async def get_books():

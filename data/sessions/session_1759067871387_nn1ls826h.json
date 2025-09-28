@@ -1,0 +1,16 @@
+{
+  "id": "session_1759067871387_nn1ls826h",
+  "state": "order_confirm",
+  "context": {
+    "book_id": 1,
+    "book_title": "Nhà giả kim",
+    "book_price": 89000.0,
+    "book_stock": 13,
+    "quantity": 7,
+    "customer_name": "tên bách ở hà nội",
+    "phone": "0287282873",
+    "address": "nghệ annnn"
+  },
+  "created_at": "2025-09-28T20:58:51.890217",
+  "updated_at": "2025-09-28T21:00:21.739944"
+}
