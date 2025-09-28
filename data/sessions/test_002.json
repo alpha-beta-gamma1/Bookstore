@@ -1,0 +1,16 @@
+{
+  "id": "test_002",
+  "state": "order_ask_phone",
+  "context": {
+    "book_id": 2,
+    "book_title": "Đắc Nhân Tâm",
+    "book_price": 99000.0,
+    "book_stock": 50,
+    "quantity": 3,
+    "customer_name": "bách",
+    "phone": "0333215647",
+    "address": null
+  },
+  "created_at": "2025-09-28T13:53:43.430517",
+  "updated_at": "2025-09-28T13:54:18.523467"
+}

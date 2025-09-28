@@ -1,0 +1,16 @@
+{
+  "id": "session_1759045995982_dddmpdl8p",
+  "state": "order_confirm",
+  "context": {
+    "book_id": 2,
+    "book_title": "Đắc Nhân Tâm",
+    "book_price": 99000.0,
+    "book_stock": 50,
+    "quantity": 5,
+    "customer_name": "bách",
+    "phone": "0333215647",
+    "address": "nghệ an"
+  },
+  "created_at": "2025-09-28T14:53:18.510738",
+  "updated_at": "2025-09-28T14:53:40.129898"
+}
