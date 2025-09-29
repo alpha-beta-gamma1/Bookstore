@@ -2,7 +2,7 @@ from bot.response import ResponseGenerator
 
 def main():
     rg = ResponseGenerator()
-    session_id = "test_001"
+    session_id = "test_008"
 
     while True:
         user_message = input("Bạn: ")

@@ -65,7 +65,7 @@ class NLU:
         }
 
         # --------- LLM Config (Gemini) ----------
-        genai.configure(api_key="AIzaSyCJxQsH_U1-zVNLnm-CKdbaVvx8ZPGoYhg")  # đặt key thật
+        genai.configure(api_key="AIzaSyCJxQsH_U1-zVNLnm-CKdbaVvx8ZPGoYhg")
         self.llm_model = genai.GenerativeModel('gemini-2.0-flash')
 
         self.entity_prompt = """
@@ -107,7 +107,7 @@ class NLU:
         """
 
     # ---------- Step 1: detect intent bằng embedding ----------
-    def classify_intent(self, text: str, threshold: float = 0.15):
+    def classify_intent(self, text: str, threshold: float = 0.1):
         user_emb = self.embed_model.encode(text, convert_to_tensor=True)
         best_intent, best_score = None, -1
 
@@ -117,23 +117,69 @@ class NLU:
             if max_score > best_score:
                 best_intent, best_score = intent, max_score
 
-        # 🔎 Nếu score nhỏ hơn threshold thì gán intent = "unknown"
         if best_score < threshold:
             return "unknown", best_score
         
         return best_intent, best_score
 
-
-    # ---------- Step 2: extract entities bằng LLM ----------
+    # ---------- Step 2: extract entities bằng LLM với fallback ----------
     def extract_entities(self, text: str):
         prompt = self.entity_prompt.format(user_input=text)
-        try:
-            response = self.llm_model.generate_content(prompt)
-            json_str = response.text.strip().strip('`').replace("json", "").strip()
-            return json.loads(json_str).get("entities", {})
-        except Exception as e:
-            print("LLM parse error:", e)
-            return {}
+        max_retries = 2
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.llm_model.generate_content(prompt)
+                json_str = response.text.strip().strip('`').replace("json", "").strip()
+                return json.loads(json_str).get("entities", {})
+            except Exception as e:
+                print(f"LLM parse error (attempt {attempt + 1}/{max_retries}):", e)
+                if attempt == max_retries - 1:
+                    # Fallback: dùng regex để extract cơ bản
+                    return self._fallback_entity_extraction(text)
+        return {}
+    
+    def _fallback_entity_extraction(self, text: str):
+        """Fallback khi LLM fail - extract entities bằng regex"""
+        entities = {}
+        
+        # Extract số lượng
+        qty_match = re.search(r'\b(\d+)\s*(?:cuốn|quyển|cái)', text, re.IGNORECASE)
+        if qty_match:
+            entities['quantity'] = int(qty_match.group(1))
+        
+        # Extract phone
+        phone_match = re.search(r'\b0\d{9,10}\b', text)
+        if phone_match:
+            entities['phone'] = phone_match.group()
+        
+        # Extract tên sách phổ biến
+        common_books = ['đắc nhân tâm', 'nhà giả kim', 'sapiens', 'atomic habits', 
+                       'think and grow rich', 'rich dad poor dad', 'tuổi trẻ đáng giá bao nhiêu',
+                       'sống thực tế giữa đời thực dụng', 'nghệ thuật tinh tế của việc đếch quan tâm']
+        text_lower = text.lower()
+        for book in common_books:
+            if book in text_lower:
+                entities['book_title'] = book
+                break
+        
+        # Nếu không có book_title nhưng có số lượng, thử extract tên từ pattern
+        if 'book_title' not in entities:
+            # Pattern: "3 [tên sách]" hoặc "mua [tên sách]"
+            patterns = [
+                r'(?:mua|đặt|order)\s+(?:\d+\s+)?(.+?)(?:\s+và|\s*$)',
+                r'\d+\s+(.+?)(?:\s+và|\s*$)'
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, text_lower)
+                if match:
+                    potential_title = match.group(1).strip()
+                    if len(potential_title) > 3:  # Tránh extract quá ngắn
+                        entities['book_title'] = potential_title
+                        break
+        
+        print(f"Fallback extraction: {entities}")
+        return entities
 
     # ---------- Step 3: hàm tổng hợp ----------
     def analyze(self, text: str):
@@ -143,7 +189,7 @@ class NLU:
         if intent in ["order_book", "search_book"]:
             entities = self.extract_entities(text)
         return {
-            # "intent": intent,
+            "intent": intent,
             "confidence": score,
             "entities": entities
         }
@@ -167,7 +213,6 @@ class NLU:
         
         # Fallback cho customer_name (nếu message chỉ có tên)
         if not entities.get('customer_name') and len(text.strip().split()) <= 3:
-            # Nếu message ngắn và không chứa số, có thể là tên
             if not re.search(r'\d', text) and len(text.strip()) >= 2:
                 entities['customer_name'] = text.strip().title()
         
